@@ -17,6 +17,7 @@ package v3rpc
 
 import (
 	"context"
+	"time"
 
 	"go.etcd.io/etcd/etcdserver"
 	"go.etcd.io/etcd/etcdserver/api/v3rpc/rpctypes"
@@ -45,6 +46,14 @@ func NewKVServer(s *etcdserver.EtcdServer) pb.KVServer {
 }
 
 func (s *kvServer) Range(ctx context.Context, r *pb.RangeRequest) (*pb.RangeResponse, error) {
+	start := time.Now()
+
+	defer func() {
+		if time.Since(start) > 100*time.Millisecond {
+			plog.Infof("kvServer.Range took %v", time.Since(start))
+		}
+	}()
+
 	if err := checkRangeRequest(r); err != nil {
 		return nil, err
 	}

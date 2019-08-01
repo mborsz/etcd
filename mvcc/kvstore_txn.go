@@ -15,6 +15,8 @@
 package mvcc
 
 import (
+	"time"
+
 	"go.etcd.io/etcd/lease"
 	"go.etcd.io/etcd/mvcc/backend"
 	"go.etcd.io/etcd/mvcc/mvccpb"
@@ -112,6 +114,13 @@ func (tw *storeTxnWrite) End() {
 }
 
 func (tr *storeTxnRead) rangeKeys(key, end []byte, curRev int64, ro RangeOptions) (*RangeResult, error) {
+	start := time.Now()
+
+	defer func() {
+		if time.Since(start) > 100*time.Millisecond {
+			plog.Infof("rangeKeys for %v %v took %v", key, end, time.Since(start))
+		}
+	}()
 	rev := ro.Rev
 	if rev > curRev {
 		return &RangeResult{KVs: nil, Count: -1, Rev: curRev}, ErrFutureRev

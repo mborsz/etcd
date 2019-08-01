@@ -246,6 +246,14 @@ func (a *applierV3backend) DeleteRange(txn mvcc.TxnWrite, dr *pb.DeleteRangeRequ
 }
 
 func (a *applierV3backend) Range(txn mvcc.TxnRead, r *pb.RangeRequest) (*pb.RangeResponse, error) {
+	start := time.Now()
+
+	defer func() {
+		if time.Since(start) > 100*time.Millisecond {
+			plog.Infof("applierV3backend.Range took %v", time.Since(start))
+		}
+	}()
+
 	resp := &pb.RangeResponse{}
 	resp.Header = &pb.ResponseHeader{}
 
@@ -341,6 +349,13 @@ func (a *applierV3backend) Range(txn mvcc.TxnRead, r *pb.RangeRequest) (*pb.Rang
 }
 
 func (a *applierV3backend) Txn(rt *pb.TxnRequest) (*pb.TxnResponse, error) {
+	start := time.Now()
+	defer func() {
+		if time.Since(start) > 100*time.Millisecond {
+			plog.Infof("applierV3backend.Txn took %v", time.Since(start))
+		}
+	}()
+
 	isWrite := !isTxnReadonly(rt)
 	txn := mvcc.NewReadOnlyTxnWrite(a.s.KV().Read())
 

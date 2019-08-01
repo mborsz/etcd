@@ -23,6 +23,8 @@ import (
 
 func (s *store) scheduleCompaction(compactMainRev int64, keep map[revision]struct{}) bool {
 	totalStart := time.Now()
+	plog.Infof("Starting scheduledCompaction(%v, keep); len(keep) = %v", compactMainRev, len(keep))
+	defer plog.Infof("Finished scheduledCompaction(%v, keep); len(keep) = %v", compactMainRev, len(keep))
 	defer func() { dbCompactionTotalMs.Observe(float64(time.Since(totalStart) / time.Millisecond)) }()
 	keyCompactions := 0
 	defer func() { dbCompactionKeysCounter.Add(float64(keyCompactions)) }()
@@ -33,11 +35,14 @@ func (s *store) scheduleCompaction(compactMainRev int64, keep map[revision]struc
 	batchsize := int64(10000)
 	last := make([]byte, 8+1+8)
 	for {
+		plog.Infof("Starting iteration in scheduledCompaction %v; last=%v", compactMainRev, last)
 		var rev revision
 
 		start := time.Now()
 		tx := s.b.BatchTx()
+		plog.Infof("Attempt to tx.Lock in %v %v", compactMainRev, last)
 		tx.Lock()
+		plog.Infof("tx.Lock in %v %v", compactMainRev, last)
 
 		keys, _ := tx.UnsafeRange(keyBucketName, last, end, batchsize)
 		for _, key := range keys {
@@ -67,9 +72,12 @@ func (s *store) scheduleCompaction(compactMainRev int64, keep map[revision]struc
 
 		// update last
 		revToBytes(revision{main: rev.main, sub: rev.sub + 1}, last)
+		plog.Infof("tx.Unlocking in %v %v", compactMainRev, last)
 		tx.Unlock()
+		plog.Infof("tx.Unlocked in %v %v", compactMainRev, last)
 		dbCompactionPauseMs.Observe(float64(time.Since(start) / time.Millisecond))
 
+		plog.Infof("Finished iteration in scheduledCompaction %v; last=%v", compactMainRev, last)
 		select {
 		case <-time.After(100 * time.Millisecond):
 		case <-s.stopc:

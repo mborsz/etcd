@@ -21,6 +21,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -199,7 +200,12 @@ func (b *backend) ReadTx() ReadTx { return b.readTx }
 // A) creates and keeps a copy of backend.readTx.txReadBuffer,
 // B) references the boltdb read Tx (and its bucket cache) of current batch interval.
 func (b *backend) ConcurrentReadTx() ReadTx {
+	start := time.Now()
 	b.readTx.RLock()
+	if time.Since(start) > 100*time.Millisecond {
+		plog.Infof("Waiting for b.readTx.RLock() in ConcurrentReadTx took %v", time.Since(start))
+		plog.Infof("ConcurrentReadTx: %s", debug.Stack())
+	}
 	defer b.readTx.RUnlock()
 	// prevent boltdb read Tx from been rolled back until store read Tx is done. Needs to be called when holding readTx.RLock().
 	b.readTx.txWg.Add(1)
@@ -327,7 +333,9 @@ func (b *backend) run() {
 			return
 		}
 		if b.batchTx.safePending() != 0 {
+			plog.Infof("batch scheduled commit starts...")
 			b.batchTx.Commit()
+			plog.Infof("batch scheduled commit finished")
 		}
 		t.Reset(b.batchInterval)
 	}

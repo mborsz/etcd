@@ -91,21 +91,36 @@ func (s *EtcdServer) Range(ctx context.Context, r *pb.RangeRequest) (*pb.RangeRe
 		warnOfExpensiveReadOnlyRangeRequest(s.getLogger(), start, r, resp, err)
 	}(time.Now())
 
+	start := time.Now()
 	if !r.Serializable {
 		err = s.linearizableReadNotify(ctx)
 		if err != nil {
 			return nil, err
 		}
 	}
+	if time.Since(start) > 100*time.Millisecond {
+		plog.Infof("EtcdServer.Range linearizableReadNotify took %v", time.Since(start))
+	}
 	chk := func(ai *auth.AuthInfo) error {
 		return s.authStore.IsRangePermitted(ai, r.Key, r.RangeEnd)
 	}
 
-	get := func() { resp, err = s.applyV3Base.Range(nil, r) }
+	get := func() {
+		start = time.Now()
+		resp, err = s.applyV3Base.Range(nil, r)
+		if time.Since(start) > 100*time.Millisecond {
+			plog.Infof("EtcdServer.Range s.applyV3Base.Rangey took %v", time.Since(start))
+		}
+	}
+	start = time.Now()
 	if serr := s.doSerialize(ctx, chk, get); serr != nil {
 		err = serr
 		return nil, err
 	}
+	if time.Since(start) > 100*time.Millisecond {
+		plog.Infof("EtcdServer.Range s.doSerialize took %v", time.Since(start))
+	}
+
 	return resp, err
 }
 
@@ -733,16 +748,32 @@ func (s *EtcdServer) linearizableReadLoop() {
 }
 
 func (s *EtcdServer) linearizableReadNotify(ctx context.Context) error {
+	start := time.Now()
 	s.readMu.RLock()
 	nc := s.readNotifier
 	s.readMu.RUnlock()
 
+	if time.Since(start) > 100*time.Millisecond {
+		plog.Infof("EtcdServer.linearizableReadNotify took %v", time.Since(start))
+	}
+
+	start = time.Now()
 	// signal linearizable loop for current notify if it hasn't been already
 	select {
 	case s.readwaitc <- struct{}{}:
 	default:
 	}
 
+	if time.Since(start) > 100*time.Millisecond {
+		plog.Infof("EtcdServer.linearizableReadNotify select took %v", time.Since(start))
+	}
+
+	start = time.Now()
+	defer func() {
+		if time.Since(start) > 100*time.Millisecond {
+			plog.Infof("EtcdServer.linearizableReadNotify select #2 took %v", time.Since(start))
+		}
+	}()
 	// wait for read state notification
 	select {
 	case <-nc.c:

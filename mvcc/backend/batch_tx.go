@@ -242,6 +242,8 @@ func (t *batchTx) commit(stop bool) {
 		commitSec.Observe(time.Since(start).Seconds())
 		atomic.AddInt64(&t.backend.commits, 1)
 
+		plog.Infof("commit stats: Split = %v, Spill = %v, SpillTime = %v", t.tx.Stats().Split, t.tx.Stats().Spill, t.tx.Stats().SpillTime)
+
 		t.pending = 0
 		if err != nil {
 			if t.backend.lg != nil {
@@ -279,6 +281,7 @@ func (t *batchTxBuffered) Unlock() {
 		t.buf.writeback(&t.backend.readTx.buf)
 		t.backend.readTx.Unlock()
 		if t.pending >= t.backend.batchLimit {
+			plog.Infof("batchTxBuffered Unlock runs commit (%v >= %v)", t.pending, t.backend.batchLimit)
 			t.commit(false)
 		}
 	}
@@ -299,9 +302,13 @@ func (t *batchTxBuffered) CommitAndStop() {
 
 func (t *batchTxBuffered) commit(stop bool) {
 	// all read txs must be closed to acquire boltdb commit rwlock
+	plog.Infof("batchTxBuffered commit readTx.Locking")
 	t.backend.readTx.Lock()
+	plog.Infof("batchTxBuffered commit readTx.Locked")
 	t.unsafeCommit(stop)
+	plog.Infof("batchTxBuffered commit readTx.Unlocking")
 	t.backend.readTx.Unlock()
+	plog.Infof("batchTxBuffered commit readTx.Unlocked")
 }
 
 func (t *batchTxBuffered) unsafeCommit(stop bool) {

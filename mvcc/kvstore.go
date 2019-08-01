@@ -260,7 +260,9 @@ func (s *store) updateCompactRev(rev int64) (<-chan struct{}, error) {
 
 func (s *store) compact(rev int64) (<-chan struct{}, error) {
 	start := time.Now()
+	plog.Infof("Starting s.kvindex.Compact(%v)", rev)
 	keep := s.kvindex.Compact(rev)
+	plog.Infof("Finished s.kvindex.Compact(%v); len(keep) = %v", rev, len(keep))
 	ch := make(chan struct{})
 	var j = func(ctx context.Context) {
 		if ctx.Err() != nil {
