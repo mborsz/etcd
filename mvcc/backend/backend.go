@@ -21,7 +21,6 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"runtime/debug"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -57,6 +56,10 @@ type Backend interface {
 	ConcurrentReadTx() ReadTx
 
 	Snapshot() Snapshot
+
+	// Compact deletes all the provided keys directly from boltdb.
+	Compact(bucket []byte, keys [][]byte) error
+
 	Hash(ignores map[IgnoreKey]struct{}) (uint32, error)
 	// Size returns the current size of the backend physically allocated.
 	// The backend can hold DB space that is not utilized at the moment,
@@ -204,7 +207,6 @@ func (b *backend) ConcurrentReadTx() ReadTx {
 	b.readTx.RLock()
 	if time.Since(start) > 100*time.Millisecond {
 		plog.Infof("Waiting for b.readTx.RLock() in ConcurrentReadTx took %v", time.Since(start))
-		plog.Infof("ConcurrentReadTx: %s", debug.Stack())
 	}
 	defer b.readTx.RUnlock()
 	// prevent boltdb read Tx from been rolled back until store read Tx is done. Needs to be called when holding readTx.RLock().
@@ -281,6 +283,19 @@ type IgnoreKey struct {
 	Key    string
 }
 
+func (b *backend) Compact(bucket []byte, keys [][]byte) error {
+	return b.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket(bucket)
+		for _, key := range keys {
+			err := b.Delete(key)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 func (b *backend) Hash(ignores map[IgnoreKey]struct{}) (uint32, error) {
 	h := crc32.New(crc32.MakeTable(crc32.Castagnoli))
 
@@ -333,9 +348,7 @@ func (b *backend) run() {
 			return
 		}
 		if b.batchTx.safePending() != 0 {
-			plog.Infof("batch scheduled commit starts...")
 			b.batchTx.Commit()
-			plog.Infof("batch scheduled commit finished")
 		}
 		t.Reset(b.batchInterval)
 	}
